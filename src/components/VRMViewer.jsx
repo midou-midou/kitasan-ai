@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { RectAreaLightUniformsLib } from "three/examples/jsm/lights/RectAreaLightUniformsLib.js";
 import { VRMLoaderPlugin } from "@pixiv/three-vrm";
 import vrmUrl from "../assets/model/kitasan.vrm?url";
 import useLipSync from "../hooks/useLipSync";
@@ -8,6 +9,7 @@ import useNaturalBlink from "../hooks/useNaturalBlink";
 
 const MOUTH_EXPRESSION = "aa";
 const BLINK_EXPRESSION = "blink";
+const BACKGROUND_COLOR = 0xf5f5f5;
 
 const collectExpressionMorphs = (vrm, expressionName) => {
   const expression = vrm.expressionManager?.getExpression(expressionName);
@@ -43,14 +45,12 @@ export default function VRMViewer() {
   const vrmRef = useRef();
   const audioRef = useRef();
   const mouthValueRef = useRef(0);
-  const manualMouthValueRef = useRef(0);
   const mouthMorphsRef = useRef([]);
   const blinkMorphsRef = useRef([]);
   const [vrm, setVrm] = useState(null);
   const [audioSrc, setAudioSrc] = useState("");
   const [audioEl, setAudioEl] = useState(null);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [manualMouthValue, setManualMouthValue] = useState(0);
 
   // Pass vrm and audio element to the hook — it handles lip-sync internally
   const { mouthValue } = useLipSync(vrm, audioEl);
@@ -61,12 +61,8 @@ export default function VRMViewer() {
   }, [mouthValue]);
 
   useEffect(() => {
-    manualMouthValueRef.current = manualMouthValue;
-  }, [manualMouthValue]);
-
-  useEffect(() => {
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0xffffff);
+    scene.background = new THREE.Color(BACKGROUND_COLOR);
     const container = containerRef.current;
 
     const camera = new THREE.PerspectiveCamera(
@@ -78,12 +74,34 @@ export default function VRMViewer() {
     camera.position.set(0, 1.4, 2);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.NoToneMapping;
     container.appendChild(renderer.domElement);
 
-    const light = new THREE.DirectionalLight(0xffffff, 1);
-    light.position.set(1, 1, 1);
-    scene.add(light);
+    RectAreaLightUniformsLib.init();
+
+    const ambientLight = new THREE.AmbientLight(0xffffff, 1.8);
+    scene.add(ambientLight);
+
+    const hemisphereLight = new THREE.HemisphereLight(0xffffff, 0xd8d8d8, 1.2);
+    scene.add(hemisphereLight);
+
+    const keyLight = new THREE.RectAreaLight(0xffffff, 12, 4.0, 3.0);
+    keyLight.position.set(0, 1.6, 1.6);
+    keyLight.lookAt(0, 1.25, 0);
+    scene.add(keyLight);
+
+    const fillLight = new THREE.RectAreaLight(0xffffff, 5, 3.0, 2.4);
+    fillLight.position.set(-1.6, 1.25, 1.2);
+    fillLight.lookAt(0, 1.2, 0);
+    scene.add(fillLight);
+
+    const rimLight = new THREE.RectAreaLight(0xffffff, 3, 2.4, 2.8);
+    rimLight.position.set(1.8, 1.8, -1.8);
+    rimLight.lookAt(0, 1.35, 0);
+    scene.add(rimLight);
 
     const loader = new GLTFLoader();
     loader.register((parser) => new VRMLoaderPlugin(parser));
@@ -99,10 +117,8 @@ export default function VRMViewer() {
       if (blinkMorphsRef.current.length === 0) {
         blinkMorphsRef.current = collectMorphsByIndex(loadedVrm, 14);
       }
-      console.info("VRM expression morphs", {
-        mouth: mouthMorphsRef.current.length,
-        blink: blinkMorphsRef.current.length,
-      });
+      loadedVrm.scene.rotation.y = Math.PI;
+
       setVrm(loadedVrm);
       scene.add(loadedVrm.scene);
     });
@@ -118,10 +134,7 @@ export default function VRMViewer() {
       if (currentVrm) {
         const elapsedTime = clock.elapsedTime;
         updateBlink(elapsedTime);
-        const activeMouthValue = Math.max(
-          mouthValueRef.current,
-          manualMouthValueRef.current
-        );
+        const activeMouthValue = mouthValueRef.current;
         currentVrm.expressionManager?.setValue(MOUTH_EXPRESSION, activeMouthValue);
         currentVrm.expressionManager?.setValue(BLINK_EXPRESSION, blinkWeightRef.current);
         currentVrm.update(clock.getDelta());
@@ -134,8 +147,6 @@ export default function VRMViewer() {
             blinkWeightRef.current * morph.weight;
         }
       }
-
-      // console.log(currentVrm);
 
       renderer.render(scene, camera);
     };
@@ -279,32 +290,6 @@ export default function VRMViewer() {
         </div>
       )}
 
-      <label
-        style={{
-          position: "fixed",
-          right: 20,
-          bottom: 20,
-          width: 220,
-          padding: "8px 10px",
-          borderRadius: 6,
-          background: "rgba(0, 0, 0, 0.65)",
-          color: "#fff",
-          fontSize: 12,
-          zIndex: 1000,
-          textAlign: "left",
-        }}
-      >
-        手动嘴型测试: {manualMouthValue.toFixed(2)}
-        <input
-          type="range"
-          min="0"
-          max="1"
-          step="0.01"
-          value={manualMouthValue}
-          onChange={(event) => setManualMouthValue(Number(event.target.value))}
-          style={{ width: "100%" }}
-        />
-      </label>
     </>
   );
 }

@@ -1,3 +1,10 @@
+---
+name: 用户角色
+description: 用户的职业背景和技术专长
+type: user
+---
+你是一位资深前端开发工程师，有 10 年前端开发经验，而且非常熟悉 three.js 的开发，有多年 3D 开发经验
+
 # CODEBUDDY.md This file provides guidance to CodeBuddy when working with code in this repository.
 
 ## Commands
