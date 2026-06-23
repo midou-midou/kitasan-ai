@@ -7,6 +7,12 @@ const MOUTH_OPEN_SPEED = 0.65;
 const MOUTH_CLOSE_SPEED = 0.3;
 const audioGraphs = new WeakMap();
 
+/**
+ * 获取或创建音频分析图。
+ *
+ * @param {HTMLMediaElement} mediaElement 需要分析的媒体元素。
+ * @returns {{audioContext: AudioContext, source: MediaElementAudioSourceNode}} 音频上下文和媒体源节点。
+ */
 const getAudioGraph = (mediaElement) => {
   let graph = audioGraphs.get(mediaElement);
 
@@ -24,14 +30,11 @@ const getAudioGraph = (mediaElement) => {
 };
 
 /**
- * Hook that connects an HTMLMediaElement's audio output to a VRM model,
- * analyzing volume and automatically driving the "aa" mouth expression.
+ * 将音频输出连接到 VRM 模型并驱动嘴型表情。
  *
- * Usage:
- *   useLipSync(vrm, audioElement);
- *
- * The hook starts an internal animation loop that reads volume from
- * the analyser and applies it to vrm.expressionManager each frame.
+ * @param {object|null} vrm 已加载的 VRM 实例。
+ * @param {HTMLMediaElement|null} mediaElement 需要分析的音频元素。
+ * @returns {{disconnect: Function, mouthValue: number}} 断开函数和当前嘴型权重。
  */
 export default function useLipSync(vrm, mediaElement) {
   const [mouthValue, setVisibleMouthValue] = useState(0);
@@ -41,6 +44,12 @@ export default function useLipSync(vrm, mediaElement) {
   const rafIdRef = useRef(null);
   const mouthValueRef = useRef(0);
 
+  /**
+   * 设置当前嘴型权重并同步到 VRM 表情。
+   *
+   * @param {number} value 嘴型权重。
+   * @returns {void}
+   */
   const setMouthValue = useCallback(
     (value) => {
       mouthValueRef.current = value;
@@ -50,6 +59,11 @@ export default function useLipSync(vrm, mediaElement) {
     [vrm]
   );
 
+  /**
+   * 断开音频分析器并重置嘴型。
+   *
+   * @returns {void}
+   */
   const disconnect = useCallback(() => {
     if (rafIdRef.current) {
       cancelAnimationFrame(rafIdRef.current);
@@ -81,19 +95,33 @@ export default function useLipSync(vrm, mediaElement) {
     source.connect(analyser);
     analyser.connect(audioContext.destination);
 
+    /**
+     * 恢复处于暂停状态的 AudioContext。
+     *
+     * @returns {void}
+     */
     const resumeAudioContext = () => {
       if (audioContext.state === "suspended") {
         audioContext.resume();
       }
     };
 
+    /**
+     * 将嘴型重置为闭合状态。
+     *
+     * @returns {void}
+     */
     const resetMouth = () => setMouthValue(0);
 
     mediaElement.addEventListener("play", resumeAudioContext);
     mediaElement.addEventListener("pause", resetMouth);
     mediaElement.addEventListener("ended", resetMouth);
 
-    // Animation loop: read RMS volume → smooth → drive VRM expression each frame
+    /**
+     * 逐帧读取 RMS 音量并平滑驱动嘴型。
+     *
+     * @returns {void}
+     */
     const update = () => {
       rafIdRef.current = requestAnimationFrame(update);
 
