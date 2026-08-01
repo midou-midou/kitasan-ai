@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef } from "react";
 
-const BLINK_EXPRESSION = "blink";
 const DEFAULT_INTERVAL_RANGE = [2.8, 6.5];
 const TALKING_INTERVAL_RANGE = [6.0, 11.0];
 const CLOSE_DURATION = 0.055;
@@ -95,12 +94,6 @@ export default function useNaturalBlink(vrm, talkingValue = 0) {
     blinkWeightRef.current = 0;
   }, [vrm]);
 
-  useEffect(() => {
-    return () => {
-      vrmRef.current?.expressionManager?.setValue(BLINK_EXPRESSION, 0);
-    };
-  }, []);
-
   /**
    * 根据场景运行时间更新眨眼状态。
    *
@@ -124,7 +117,6 @@ export default function useNaturalBlink(vrm, talkingValue = 0) {
       }
     }
 
-    vrmRef.current?.expressionManager?.setValue(BLINK_EXPRESSION, blinkWeightRef.current);
   }, []);
 
   return {

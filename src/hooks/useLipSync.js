@@ -1,6 +1,5 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 
-const MOUTH_EXPRESSION = "aa";
 const SILENCE_THRESHOLD = 0.01;
 const VOLUME_GAIN = 18;
 const MOUTH_OPEN_SPEED = 0.65;
@@ -54,9 +53,8 @@ export default function useLipSync(vrm, mediaElement) {
     (value) => {
       mouthValueRef.current = value;
       setVisibleMouthValue(value);
-      vrm?.expressionManager?.setValue(MOUTH_EXPRESSION, value);
     },
-    [vrm]
+    []
   );
 
   /**

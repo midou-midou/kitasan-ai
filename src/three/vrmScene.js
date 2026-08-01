@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { RectAreaLightUniformsLib } from "three/examples/jsm/lights/RectAreaLightUniformsLib.js";
-import { VRMLoaderPlugin } from "@pixiv/three-vrm";
+import { VRMLoaderPlugin, VRMUtils } from "@pixiv/three-vrm";
 
 const BACKGROUND_COLOR = 0xf5f5f5;
 const CAMERA_TARGET = new THREE.Vector3(0, 0.85, 0);
@@ -127,6 +127,8 @@ export const createVRMScene = (container, vrmUrl) => {
   const renderer = createRenderer();
   const clock = new THREE.Clock();
   const loader = createVRMLoader();
+  let currentVrm = null;
+  let isDisposed = false;
 
   addAreaLighting(scene);
   container.appendChild(renderer.domElement);
@@ -160,8 +162,25 @@ export const createVRMScene = (container, vrmUrl) => {
    * @returns {Promise<object>} 已加载的 VRM 实例。
    */
   const loadModel = async () => {
+    if (isDisposed) {
+      return null;
+    }
+
+    if (currentVrm) {
+      scene.remove(currentVrm.scene);
+      VRMUtils.deepDispose(currentVrm.scene);
+      currentVrm = null;
+    }
+
     const vrm = await loadVRM(loader, vrmUrl);
+
+    if (isDisposed) {
+      VRMUtils.deepDispose(vrm.scene);
+      return null;
+    }
+
     scene.add(vrm.scene);
+    currentVrm = vrm;
     return vrm;
   };
 
@@ -171,10 +190,29 @@ export const createVRMScene = (container, vrmUrl) => {
    * @returns {void}
    */
   const dispose = () => {
+    isDisposed = true;
+
+    if (currentVrm) {
+      scene.remove(currentVrm.scene);
+      VRMUtils.deepDispose(currentVrm.scene);
+      currentVrm = null;
+    }
+
+    scene.traverse((object) => {
+      if (object.isLight || object.isCamera) return;
+      if (object.geometry) object.geometry.dispose?.();
+      if (Array.isArray(object.material)) {
+        for (const material of object.material) material.dispose?.();
+      } else {
+        object.material?.dispose?.();
+      }
+    });
+
     if (renderer.domElement.parentNode === container) {
       container.removeChild(renderer.domElement);
     }
     renderer.dispose();
+    loader.dispose?.();
   };
 
   return {

@@ -2,12 +2,14 @@ import { useEffect, useRef, useState } from "react";
 import vrmUrl from "../assets/model/kitasan.vrm?url";
 import useLipSync from "../hooks/useLipSync";
 import useNaturalBlink from "../hooks/useNaturalBlink";
-import { createVRMAMotionController } from "../animation";
+import {
+  createVRMAActionSystem,
+  createVRMExpressionController,
+  VRM_EXPRESSION_CONFIG,
+  VRM_EXPRESSION_GROUPS,
+} from "../animation";
 import DebugControls from "./debug/DebugControls";
 import { createVRMScene } from "../three/vrmScene";
-
-const MOUTH_EXPRESSION = "aa";
-const BLINK_EXPRESSION = "blink";
 
 /**
  * 收集指定 VRM 表情绑定到的 morph target。
@@ -53,6 +55,57 @@ const collectMorphsByIndex = (vrm, morphIndex) => {
 };
 
 /**
+ * 初始化刚加载完成的 VRM 实例。
+ *
+ * @param {object} loadedVrm 已加载的 VRM 实例。
+ * @param {{
+ *   current: object|null
+ * }} vrmRef VRM 引用。
+ * @param {{current: Array<{target: object, index: number, weight: number}>}} mouthMorphsRef 嘴部 morph 引用。
+ * @param {{current: Array<{target: object, index: number, weight: number}>}} blinkMorphsRef 眼部 morph 引用。
+ * @param {{current: object|null}} vrmaControllerRef 动作控制器引用。
+ * @param {{current: object|null}} expressionControllerRef 表情控制器引用。
+ * @param {Function} setVrm React 状态设置函数。
+ * @returns {void}
+ */
+const initializeLoadedVrm = (
+  loadedVrm,
+  vrmRef,
+  mouthMorphsRef,
+  blinkMorphsRef,
+  vrmaControllerRef,
+  expressionControllerRef,
+  setVrm
+) => {
+  vrmRef.current?.scene?.parent?.remove(vrmRef.current.scene);
+  vrmRef.current = null;
+  mouthMorphsRef.current = [];
+  blinkMorphsRef.current = [];
+
+  vrmRef.current = loadedVrm;
+  mouthMorphsRef.current = collectExpressionMorphs(loadedVrm, VRM_EXPRESSION_CONFIG.mouth);
+  blinkMorphsRef.current = collectExpressionMorphs(loadedVrm, VRM_EXPRESSION_CONFIG.eye);
+
+  if (mouthMorphsRef.current.length === 0) {
+    mouthMorphsRef.current = collectMorphsByIndex(loadedVrm, 36);
+  }
+  if (blinkMorphsRef.current.length === 0) {
+    blinkMorphsRef.current = collectMorphsByIndex(loadedVrm, 14);
+  }
+
+  vrmaControllerRef.current?.dispose();
+  vrmaControllerRef.current = createVRMAActionSystem(loadedVrm);
+  vrmaControllerRef.current.startIdle();
+
+  expressionControllerRef.current?.dispose();
+  expressionControllerRef.current = createVRMExpressionController(loadedVrm, {
+    groups: VRM_EXPRESSION_GROUPS,
+  });
+
+  setVrm(loadedVrm);
+};
+
+/**
  * VRM 模型查看器组件。
  *
  * @returns {import("react").JSX.Element} VRM 模型渲染画布和调试控件。
@@ -64,6 +117,7 @@ export default function VRMViewer() {
   const mouthMorphsRef = useRef([]);
   const blinkMorphsRef = useRef([]);
   const vrmaControllerRef = useRef(null);
+  const expressionControllerRef = useRef(null);
   const [vrm, setVrm] = useState(null);
   const [audioEl, setAudioEl] = useState(null);
 
@@ -79,32 +133,22 @@ export default function VRMViewer() {
     const container = containerRef.current;
     const vrmScene = createVRMScene(container, vrmUrl);
     let isDisposed = false;
+    const handleModelLoad = async () => {
+      const loadedVrm = await vrmScene.loadModel();
+      if (isDisposed || !loadedVrm) return;
 
-    /**
-     * 处理 VRM 模型加载完成后的初始化。
-     *
-     * @param {object} loadedVrm 已加载的 VRM 实例。
-     * @returns {void}
-     */
-    vrmScene.loadModel().then((loadedVrm) => {
-      if (isDisposed) return;
+      initializeLoadedVrm(
+        loadedVrm,
+        vrmRef,
+        mouthMorphsRef,
+        blinkMorphsRef,
+        vrmaControllerRef,
+        expressionControllerRef,
+        setVrm
+      );
+    };
 
-      vrmRef.current = loadedVrm;
-      mouthMorphsRef.current = collectExpressionMorphs(loadedVrm, MOUTH_EXPRESSION);
-      blinkMorphsRef.current = collectExpressionMorphs(loadedVrm, BLINK_EXPRESSION);
-      if (mouthMorphsRef.current.length === 0) {
-        mouthMorphsRef.current = collectMorphsByIndex(loadedVrm, 36);
-      }
-      if (blinkMorphsRef.current.length === 0) {
-        blinkMorphsRef.current = collectMorphsByIndex(loadedVrm, 14);
-      }
-      vrmaControllerRef.current?.dispose();
-      vrmaControllerRef.current = createVRMAMotionController(loadedVrm);
-      vrmaControllerRef.current.initializeActionSystem();
-      vrmaControllerRef.current.startIdle();
-
-      setVrm(loadedVrm);
-    });
+    handleModelLoad();
 
     let animationFrameId = null;
 
@@ -124,8 +168,11 @@ export default function VRMViewer() {
         vrmaControllerRef.current?.update(delta);
 
         const activeMouthValue = mouthValueRef.current;
-        currentVrm.expressionManager?.setValue(MOUTH_EXPRESSION, activeMouthValue);
-        currentVrm.expressionManager?.setValue(BLINK_EXPRESSION, blinkWeightRef.current);
+        expressionControllerRef.current?.setMouthValue(
+          VRM_EXPRESSION_CONFIG.mouth,
+          activeMouthValue
+        );
+        expressionControllerRef.current?.setEyeValue(VRM_EXPRESSION_CONFIG.eye, blinkWeightRef.current);
         currentVrm.update(delta);
         for (const morph of mouthMorphsRef.current) {
           morph.target.morphTargetInfluences[morph.index] =
@@ -147,8 +194,14 @@ export default function VRMViewer() {
         cancelAnimationFrame(animationFrameId);
       }
       isDisposed = true;
+      vrmRef.current?.scene?.parent?.remove(vrmRef.current.scene);
+      vrmRef.current = null;
+      mouthMorphsRef.current = [];
+      blinkMorphsRef.current = [];
       vrmaControllerRef.current?.dispose();
       vrmaControllerRef.current = null;
+      expressionControllerRef.current?.dispose();
+      expressionControllerRef.current = null;
       vrmScene.dispose();
     };
   }, [blinkWeightRef, updateBlink]);

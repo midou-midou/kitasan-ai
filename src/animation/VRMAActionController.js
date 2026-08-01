@@ -2,7 +2,6 @@ import { createVRMAnimationClip } from "@pixiv/three-vrm-animation";
 import { parseVRMA } from "../utils/vrmaParser";
 import { ActionController } from "./ActionController";
 import { VRMA_ACTIONS_TYPES } from "./VRMA_ACTIONS_TYPES";
-import { VRMAIdleLayer } from "./VRMAIdleLayer";
 
 /**
  * VRMA 动作配置。
@@ -18,13 +17,6 @@ import { VRMAIdleLayer } from "./VRMAIdleLayer";
  *
  * @typedef {object} VRMAActionControllerOptions
  * @property {number} [fadeDuration] 默认淡入淡出时长，单位秒。
- */
-
-/**
- * VRMA 动作系统初始化配置。
- *
- * @typedef {object} VRMAActionSystemOptions
- * @property {import("./VRMAIdleLayer").VRMAIdleLayerOptions} [idle] 待机层配置。
  */
 
 /**
@@ -67,19 +59,7 @@ export class VRMAActionController extends ActionController {
     super(vrm.scene, options);
 
     this.vrm = vrm;
-    this.idleLayer = null;
     this.registerVRMAActions(VRMA_ACTIONS);
-  }
-
-  /**
-   * 初始化 VRMA 动作系统。
-   *
-   * @param {VRMAActionSystemOptions} [options={}] 动作系统初始化配置。
-   * @returns {VRMAActionController} 当前控制器实例。
-   */
-  initializeActionSystem(options = {}) {
-    this.idleLayer = new VRMAIdleLayer(this, VRMA_ACTIONS, options.idle);
-    return this;
   }
 
   /**
@@ -144,7 +124,7 @@ export class VRMAActionController extends ActionController {
    */
   playAction(actionName, options) {
     getVRMAAction(actionName);
-    return this.playActionWithIdle(actionName, options);
+    return this.play(actionName, options);
   }
 
   /**
@@ -166,18 +146,7 @@ export class VRMAActionController extends ActionController {
    * @returns {Promise<void>} 混合完成信号。
    */
   blendActions(targetWeights, options) {
-    if (!this.idleLayer) {
-      return this.blend(targetWeights, options);
-    }
-
-    this.idleLayer.duck();
-    return this.blend(
-      {
-        [this.idleLayer.baseActionName]: this.idleLayer.baseWeight,
-        ...targetWeights,
-      },
-      options
-    );
+    return this.blend(targetWeights, options);
   }
 
   /**
@@ -231,88 +200,11 @@ export class VRMAActionController extends ActionController {
   }
 
   /**
-   * 停止所有动作并恢复待机层。
-   *
-   * @param {number} [fadeDuration] 淡出时长，单位秒。
-   * @returns {void}
-   */
-  stopActions(fadeDuration) {
-    this.stopAll(fadeDuration);
-    this.idleLayer?.restore(fadeDuration);
-  }
-
-  /**
-   * 启动 VRM 待机层。
-   *
-   * @param {object} [options] 待机层配置项。
-   * @returns {VRMAActionController} 当前控制器实例。
-   */
-  startIdle(options) {
-    if (!this.idleLayer) {
-      throw new Error("VRMA action system has not been initialized.");
-    }
-
-    this.idleLayer.start(options);
-    return this;
-  }
-
-  /**
-   * 停止 VRM 待机层。
-   *
-   * @param {number} [fadeDuration] 淡出时长，单位秒。
-   * @returns {VRMAActionController} 当前控制器实例。
-   */
-  stopIdle(fadeDuration) {
-    this.idleLayer?.stop(fadeDuration);
-    return this;
-  }
-
-  /**
-   * 恢复 VRM 待机层权重。
-   *
-   * @param {number} [fadeDuration] 淡入时长，单位秒。
-   * @returns {VRMAActionController} 当前控制器实例。
-   */
-  restoreIdle(fadeDuration) {
-    this.idleLayer?.restore(fadeDuration);
-    return this;
-  }
-
-  /**
-   * 在待机层存在时播放前景动作。
-   *
-   * @param {string} actionName 动作名称。
-   * @param {object} [options={}] 播放配置。
-   * @returns {Promise<import("three").AnimationAction>|Promise<void>} 动作或完成信号。
-   */
-  async playActionWithIdle(actionName, options = {}) {
-    if (!this.idleLayer) {
-      return this.play(actionName, options);
-    }
-
-    const wasIdleEnabled = this.idleLayer.enabled;
-
-    this.idleLayer.enterForeground(options.fadeDuration);
-
-    try {
-      return await this.play(actionName, {
-        ...options,
-        stopOthers: options.stopOthers ?? false,
-      });
-    } finally {
-      if (wasIdleEnabled) {
-        this.idleLayer.exitForeground(options.fadeDuration);
-      }
-    }
-  }
-
-  /**
    * 释放 VRMA 控制器和待机层资源。
    *
    * @returns {void}
    */
   dispose() {
-    this.idleLayer?.dispose();
     super.dispose();
   }
 }
